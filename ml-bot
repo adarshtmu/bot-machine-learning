@@ -1,0 +1,543 @@
+import streamlit as st
+import google.generativeai as genai
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+import json
+import random
+import re
+from typing import Dict, List, Any
+
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="ML Expert Assistant",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- Custom CSS for Advanced UI ---
+st.markdown("""
+<style>
+/* Global Styles */
+.stApp {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Hide Streamlit Default Elements */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+.stDeployButton {display: none;}
+[data-testid="stToolbar"] {display: none;}
+[data-testid="stDecoration"] {display: none;}
+
+/* Main Container */
+.main-container {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 30px;
+    margin: 20px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+/* Header Styles */
+.ml-header {
+    text-align: center;
+    background: linear-gradient(45deg, #FF6B6B, #4ECDC4, #45B7D1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 3.5em;
+    font-weight: 800;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+}
+
+.ml-subtitle {
+    text-align: center;
+    color: #666;
+    font-size: 1.3em;
+    margin-bottom: 30px;
+    font-weight: 300;
+}
+
+/* Chat Container */
+.chat-container {
+    background: #ffffff;
+    border-radius: 15px;
+    padding: 25px;
+    margin: 20px 0;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Message Bubbles */
+.user-message {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 20px 20px 5px 20px;
+    margin: 10px 0 10px auto;
+    max-width: 80%;
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    animation: slideInRight 0.3s ease-out;
+}
+
+.bot-message {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 20px 20px 20px 5px;
+    margin: 10px auto 10px 0;
+    max-width: 80%;
+    box-shadow: 0 5px 15px rgba(240, 147, 251, 0.3);
+    animation: slideInLeft 0.3s ease-out;
+}
+
+.system-message {
+    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+    color: #333;
+    padding: 12px 18px;
+    border-radius: 15px;
+    margin: 8px 0;
+    text-align: center;
+    font-style: italic;
+    animation: fadeIn 0.5s ease-in;
+}
+
+/* Animations */
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInLeft {
+    from { transform: translateX(-100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Input Styling */
+.stTextInput > div > div > input {
+    border-radius: 25px;
+    border: 2px solid #e0e0e0;
+    padding: 15px 20px;
+    font-size: 16px;
+    background: rgba(255,255,255,0.9);
+    transition: all 0.3s ease;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.2);
+    background: white;
+}
+
+/* Button Styling */
+.stButton > button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    padding: 12px 30px;
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+}
+
+/* Sidebar Styling */
+.css-1d391kg {
+    background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Feature Cards */
+.feature-card {
+    background: white;
+    padding: 25px;
+    border-radius: 15px;
+    margin: 15px 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    border-left: 5px solid #667eea;
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+}
+
+.feature-title {
+    color: #333;
+    font-size: 1.3em;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.feature-description {
+    color: #666;
+    line-height: 1.6;
+}
+
+/* Stats Cards */
+.stats-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 15px;
+    text-align: center;
+    margin: 10px;
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+}
+
+.stats-number {
+    font-size: 2.5em;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+
+.stats-label {
+    font-size: 1em;
+    opacity: 0.9;
+}
+
+/* Code Block Styling */
+.stCodeBlock {
+    background: #1e1e1e;
+    border-radius: 10px;
+    border: 1px solid #333;
+}
+
+/* Metric Styling */
+.metric-container {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+    margin: 10px 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- Gemini API Configuration ---
+GEMINI_API_KEY = "AIzaSyAfzl_66GZsgaYjAM7cT2djVCBCAr86t2k"  # Replace with your API key
+
+if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_API_KEY_HERE":
+    st.error("🚨 Please configure your Gemini API Key")
+    st.stop()
+
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"🚨 Failed to configure Gemini API: {e}")
+    st.stop()
+
+# --- ML Knowledge Base ---
+ML_TOPICS = {
+    "Supervised Learning": {
+        "description": "Learning with labeled data to make predictions",
+        "algorithms": ["Linear Regression", "Logistic Regression", "Decision Trees", "Random Forest", "SVM", "Neural Networks"],
+        "use_cases": ["Classification", "Regression", "Prediction"]
+    },
+    "Unsupervised Learning": {
+        "description": "Finding patterns in data without labels",
+        "algorithms": ["K-Means", "Hierarchical Clustering", "DBSCAN", "PCA", "t-SNE"],
+        "use_cases": ["Clustering", "Dimensionality Reduction", "Anomaly Detection"]
+    },
+    "Deep Learning": {
+        "description": "Neural networks with multiple layers",
+        "algorithms": ["CNN", "RNN", "LSTM", "GAN", "Transformer", "Autoencoder"],
+        "use_cases": ["Computer Vision", "NLP", "Speech Recognition", "Generation"]
+    },
+    "Model Evaluation": {
+        "description": "Assessing model performance and reliability",
+        "algorithms": ["Cross-Validation", "ROC-AUC", "Precision-Recall", "Confusion Matrix"],
+        "use_cases": ["Performance Metrics", "Model Selection", "Validation"]
+    },
+    "Feature Engineering": {
+        "description": "Creating and selecting relevant features",
+        "algorithms": ["Feature Selection", "Scaling", "Encoding", "Transformation"],
+        "use_cases": ["Data Preprocessing", "Feature Creation", "Dimensionality Reduction"]
+    }
+}
+
+# --- Session State Initialization ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "conversation_count" not in st.session_state:
+    st.session_state.conversation_count = 0
+if "topics_discussed" not in st.session_state:
+    st.session_state.topics_discussed = set()
+if "user_level" not in st.session_state:
+    st.session_state.user_level = "Beginner"
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# --- Helper Functions ---
+def get_ml_response(question: str, context: str = "") -> str:
+    """Generate ML-focused response using Gemini"""
+    
+    system_prompt = f"""
+    You are an expert Machine Learning assistant and mentor. Your role is to:
+    
+    1. Provide accurate, comprehensive answers about ML concepts, algorithms, and techniques
+    2. Explain complex topics in a clear, understandable way
+    3. Give practical examples and code snippets when helpful
+    4. Suggest best practices and common pitfalls to avoid
+    5. Adapt your response to the user's level: {st.session_state.user_level}
+    6. Be encouraging and supportive while being technically accurate
+    
+    Topics you excel at:
+    - Supervised/Unsupervised Learning
+    - Deep Learning and Neural Networks
+    - Model Evaluation and Validation
+    - Feature Engineering and Selection
+    - Data Preprocessing
+    - Popular ML Libraries (scikit-learn, TensorFlow, PyTorch)
+    - ML Project Workflow
+    - Statistics for ML
+    - Model Deployment
+    
+    Current conversation context: {context}
+    
+    User's question: {question}
+    
+    Please provide a helpful, detailed response. If code examples would be useful, include them.
+    Use markdown formatting for better readability.
+    """
+    
+    try:
+        response = model.generate_content(system_prompt)
+        return response.text if hasattr(response, 'text') else "I apologize, but I couldn't generate a response at the moment."
+    except Exception as e:
+        return f"Sorry, I encountered an error: {str(e)}"
+
+def extract_ml_topics(text: str) -> List[str]:
+    """Extract ML topics mentioned in the text"""
+    topics_found = []
+    text_lower = text.lower()
+    
+    for topic, details in ML_TOPICS.items():
+        if topic.lower() in text_lower:
+            topics_found.append(topic)
+        for algorithm in details["algorithms"]:
+            if algorithm.lower() in text_lower:
+                topics_found.append(topic)
+                break
+    
+    return topics_found
+
+def update_user_stats(question: str):
+    """Update user statistics"""
+    st.session_state.conversation_count += 1
+    topics = extract_ml_topics(question)
+    st.session_state.topics_discussed.update(topics)
+
+def create_visualization_example():
+    """Create a sample ML visualization"""
+    # Sample data for ML model performance
+    models = ['Linear Regression', 'Random Forest', 'SVM', 'Neural Network', 'XGBoost']
+    accuracy = [0.82, 0.89, 0.85, 0.91, 0.93]
+    
+    fig = px.bar(
+        x=models, 
+        y=accuracy,
+        title="Model Performance Comparison",
+        labels={'x': 'Models', 'y': 'Accuracy'},
+        color=accuracy,
+        color_continuous_scale='viridis'
+    )
+    
+    fig.update_layout(
+        title_font_size=20,
+        font_size=14,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    
+    return fig
+
+# --- Main UI Layout ---
+def main():
+    # Header
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<h1 class="ml-header">🤖 ML Expert Assistant</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="ml-subtitle">Your AI-powered Machine Learning mentor and guide</p>', unsafe_allow_html=True)
+    
+    # Sidebar
+    with st.sidebar:
+        st.markdown("### 🎯 User Profile")
+        
+        # User Level Selection
+        level_options = ["Beginner", "Intermediate", "Advanced", "Expert"]
+        st.session_state.user_level = st.selectbox(
+            "Your ML Level:",
+            level_options,
+            index=level_options.index(st.session_state.user_level)
+        )
+        
+        # User Stats
+        st.markdown("### 📊 Your Stats")
+        st.markdown(f"""
+        <div class="stats-card">
+            <div class="stats-number">{st.session_state.conversation_count}</div>
+            <div class="stats-label">Questions Asked</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class="stats-card">
+            <div class="stats-number">{len(st.session_state.topics_discussed)}</div>
+            <div class="stats-label">Topics Explored</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Quick Topics
+        st.markdown("### 🚀 Quick Topics")
+        for topic, details in ML_TOPICS.items():
+            if st.button(f"📚 {topic}", key=f"topic_{topic}"):
+                question = f"Explain {topic} in detail with examples"
+                st.session_state.messages.append({"role": "user", "content": question})
+                response = get_ml_response(question)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                update_user_stats(question)
+                st.experimental_rerun()
+        
+        # Clear Chat
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.messages = []
+            st.experimental_rerun()
+    
+    # Main Chat Interface
+    chat_container = st.container()
+    
+    with chat_container:
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+        
+        # Display Welcome Message
+        if not st.session_state.messages:
+            st.markdown("""
+            <div class="system-message">
+                👋 Welcome to ML Expert Assistant! I'm here to help you learn and master Machine Learning concepts.
+                <br><br>
+                Ask me about algorithms, techniques, code examples, or any ML-related questions!
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Display Chat Messages
+        for message in st.session_state.messages:
+            if message["role"] == "user":
+                st.markdown(f"""
+                <div class="user-message">
+                    <strong>You:</strong> {message["content"]}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="bot-message">
+                    <strong>ML Assistant:</strong><br>{message["content"]}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Chat Input
+    st.markdown("### 💬 Ask Your ML Question")
+    
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
+        user_question = st.text_input(
+            "",
+            placeholder="Ask anything about Machine Learning...",
+            key="user_input"
+        )
+    
+    with col2:
+        send_button = st.button("Send 🚀")
+    
+    # Process User Input
+    if send_button and user_question:
+        # Add user message
+        st.session_state.messages.append({"role": "user", "content": user_question})
+        
+        # Generate response
+        context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages[-5:]])
+        response = get_ml_response(user_question, context)
+        
+        # Add assistant response
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        # Update stats
+        update_user_stats(user_question)
+        
+        st.experimental_rerun()
+    
+    # Feature Showcase
+    st.markdown("---")
+    st.markdown("## 🌟 What I Can Help You With")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        <div class="feature-card">
+            <div class="feature-title">🎯 Algorithm Explanations</div>
+            <div class="feature-description">
+                Get detailed explanations of ML algorithms with pros, cons, and use cases
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="feature-card">
+            <div class="feature-title">💻 Code Examples</div>
+            <div class="feature-description">
+                Practical code snippets in Python with popular libraries like scikit-learn and TensorFlow
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="feature-card">
+            <div class="feature-title">📊 Best Practices</div>
+            <div class="feature-description">
+                Learn industry best practices, common pitfalls, and optimization techniques
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Sample Visualization
+    if st.session_state.conversation_count > 0:
+        st.markdown("## 📈 Sample ML Visualization")
+        fig = create_visualization_example()
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# --- Run the App ---
+if __name__ == "__main__":
+    main()
